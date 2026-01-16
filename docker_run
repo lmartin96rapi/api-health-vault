@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Docker run script for Health Insurance API
+# Usage: ./docker_run [local|dev|prod] [up|down|restart|logs|ps]
+
+ENVIRONMENT=${1:-local}
+ACTION=${2:-up}
+
+case $ENVIRONMENT in
+    local)
+        COMPOSE_FILES="-f docker-compose.yml -f docker-compose.dev.yml"
+        echo "Running Docker containers for local environment..."
+        ;;
+    dev)
+        COMPOSE_FILES="-f docker-compose.yml -f docker-compose.dev.yml"
+        echo "Running Docker containers for development environment..."
+        ;;
+    prod)
+        COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
+        echo "Running Docker containers for production environment..."
+        ;;
+    *)
+        echo "Error: Invalid environment. Use 'local', 'dev', or 'prod'"
+        echo "Usage: ./docker_run [local|dev|prod] [up|down|restart|logs|ps]"
+        exit 1
+        ;;
+esac
+
+case $ACTION in
+    up)
+        echo "Starting containers..."
+        docker-compose $COMPOSE_FILES up -d
+        ;;
+    down)
+        echo "Stopping containers..."
+        docker-compose $COMPOSE_FILES down
+        ;;
+    restart)
+        echo "Restarting containers..."
+        docker-compose $COMPOSE_FILES restart
+        ;;
+    logs)
+        echo "Showing logs..."
+        docker-compose $COMPOSE_FILES logs -f
+        ;;
+    ps)
+        echo "Showing container status..."
+        docker-compose $COMPOSE_FILES ps
+        ;;
+    *)
+        echo "Error: Invalid action. Use 'up', 'down', 'restart', 'logs', or 'ps'"
+        echo "Usage: ./docker_run [local|dev|prod] [up|down|restart|logs|ps]"
+        exit 1
+        ;;
+esac
+
+if [ $? -eq 0 ]; then
+    echo "Docker command completed successfully!"
+else
+    echo "Docker command failed!"
+    exit 1
+fi
+

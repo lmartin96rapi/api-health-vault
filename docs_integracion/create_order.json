@@ -1,0 +1,319 @@
+{
+	"info": {
+		"_postman_id": "104f3b64-8868-44f8-a9b7-02de9537e7ca",
+		"name": "Botmaker API - Create Order",
+		"description": "API para creación de pedidos desde el bot Galicia. Este endpoint permite crear pedidos de tipo REINTEGRO, ASISTENCIA, GRUAS, MECANICA_LIGERA, CRISTALES o TELEMEDICINA.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "42894656"
+	},
+	"item": [
+		{
+			"name": "Create Order - Reintegro",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 67890,\n    \"form_type\": \"REINTEGRO\",\n    \"service_id\": 5,\n    \"comment\": \"Solicitud de reintegro por reparación de parabrisas\",\n    \"request_origin\": 13,\n    \"images\": [\n        \"https://example.com/image1.jpg\",\n        \"https://example.com/image2.jpg\"\n    ],\n    \"factura\": \"https://example.com/factura.pdf\",\n    \"is_urgency\": false,\n    \"organization_id\": 305,\n    \"email_asegurado\": \"cliente@example.com\",\n    \"cuit_cuil_asegurado\": \"20-12345678-9\",\n    \"cbu_asegurado\": \"1234567890123456789012\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/v1/bot/order/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"v1",
+						"bot",
+						"order",
+						""
+					]
+				},
+				"description": "Crea un pedido de tipo REINTEGRO. Este tipo de pedido toma los datos de dirección directamente de la póliza sin modificar. Requiere factura e imágenes del daño.\n\n**Parámetros requeridos:**\n\n- `client_id` (integer): ID del cliente\n    \n- `policy_id` (integer): ID de la póliza (ExtraDataInsuranceClientPoliza)\n    \n- `form_type` (string): Debe ser \"REINTEGRO\"\n    \n\n**Parámetros opcionales:**\n\n- `service_id` (integer): ID del servicio\n    \n- `comment` (string): Descripción del pedido\n    \n- `request_origin` (integer): Origen de la solicitud (default: 13 para bot)\n    \n- `images` (array of strings): Lista de URLs de imágenes válidas (http/https)\n    \n- `factura` (string): URL de la factura (http/https)\n    \n- `is_urgency` (boolean): Indica si el pedido es de urgencia (default: false)\n    \n- `organization_id` (integer): ID de la organización\n    \n- `email_asegurado` (string): Email del asegurado (se actualiza en el cliente si es válido)\n    \n- `cuit_cuil_asegurado` (string): CUIT/CUIL del asegurado (7-12 dígitos, se limpia de guiones y espacios)\n    \n- `cbu_asegurado` (string): CBU del asegurado (debe tener exactamente 22 dígitos)\n    \n- `availability` (array of objects): Disponibilidades del cliente. Cada objeto debe tener:\n    - `date` (string): Fecha en formato \"YYYY-MM-DD\"\n        \n    - `range` (string): Rango de disponibilidad\n        \n- `new_policy_address` (string): Nueva dirección si la de la póliza es inválida"
+			},
+			"response": [
+				{
+					"name": "Success Response",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 67890,\n    \"form_type\": \"REINTEGRO\",\n    \"service_id\": 5,\n    \"comment\": \"Solicitud de reintegro por reparación de parabrisas\",\n    \"request_origin\": 13,\n    \"images\": [\n        \"https://example.com/image1.jpg\",\n        \"https://example.com/image2.jpg\"\n    ],\n    \"factura\": \"https://example.com/factura.pdf\",\n    \"is_urgency\": false,\n    \"organization_id\": 305,\n    \"email_asegurado\": \"cliente@example.com\",\n    \"cuit_cuil_asegurado\": \"20-12345678-9\",\n    \"cbu_asegurado\": \"1234567890123456789012\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"id\": 123456,\n    \"created_time\": \"2026-01-15\",\n    \"description\": \"Solicitud de reintegro por reparación de parabrisas\",\n    \"link_veterinaria\": null,\n    \"address\": \"Av. Corrientes 1234, CABA, Buenos Aires\",\n    \"status_request\": \"En negociación\",\n    \"fecha_finalizacion\": null,\n    \"rubro\": \"Cristales\",\n    \"poliza\": {\n        \"id\": 67890,\n        \"nro_poliza\": \"123456789\",\n        \"es_vigente\": true\n    },\n    \"scheme\": {\n        \"id\": 1,\n        \"name\": \"Esquema Principal\"\n    },\n    \"organization\": {\n        \"id\": 305,\n        \"name\": \"Galicia\"\n    },\n    \"current_process_monitoring\": null\n}"
+				},
+				{
+					"name": "Error - Client Not Found",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 99999,\n    \"policy_id\": 67890,\n    \"form_type\": \"REINTEGRO\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"client_id\": [\"Cliente matching query does not exist.\"]\n}"
+				},
+				{
+					"name": "Error - Policy Not Found",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 99999,\n    \"form_type\": \"REINTEGRO\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"id_poliza\": [\"ExtraDataInsuranceClientPoliza matching query does not exist.\"]\n}"
+				},
+				{
+					"name": "Error - Invalid Form Type",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 67890,\n    \"form_type\": \"INVALID_TYPE\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"tipo_formulario\": [\"Tipo formulario vacio o incorrecto\"]\n}"
+				},
+				{
+					"name": "Error - Organization Not Found",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 67890,\n    \"form_type\": \"REINTEGRO\",\n    \"organization_id\": 99999\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"organization\": [\"Organization matching query does not exist.\"]\n}"
+				},
+				{
+					"name": "Error - Service Not Found",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": 12345,\n    \"policy_id\": 67890,\n    \"form_type\": \"REINTEGRO\",\n    \"service_id\": 99999\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/bot/order/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"bot",
+								"order",
+								""
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"id_servicio\": [\"Servicio matching query does not exist.\"]\n}"
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string",
+			"description": "URL base del servidor. Ejemplos: http://localhost:8000, https://backend.rapihogar.com.ar"
+		}
+	]
+}

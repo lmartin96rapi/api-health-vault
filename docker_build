@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Docker build script for Health Insurance API
+# Usage: ./docker_build [local|dev|prod]
+
+ENVIRONMENT=${1:-local}
+
+case $ENVIRONMENT in
+    local)
+        echo "Building Docker image for local environment..."
+        docker-compose -f docker-compose.yml -f docker-compose.dev.yml build
+        ;;
+    dev)
+        echo "Building Docker image for development environment..."
+        docker-compose -f docker-compose.yml -f docker-compose.dev.yml build
+        ;;
+    prod)
+        echo "Building Docker image for production environment..."
+        docker-compose -f docker-compose.yml -f docker-compose.prod.yml build
+        ;;
+    *)
+        echo "Error: Invalid environment. Use 'local', 'dev', or 'prod'"
+        echo "Usage: ./docker_build [local|dev|prod]"
+        exit 1
+        ;;
+esac
+
+if [ $? -eq 0 ]; then
+    echo "Docker build completed successfully!"
+else
+    echo "Docker build failed!"
+    exit 1
+fi
+

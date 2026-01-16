@@ -1,0 +1,497 @@
+{
+	"info": {
+		"_postman_id": "health-insurance-api-collection",
+		"name": "Health Insurance API",
+		"description": "Complete API collection for Health Insurance reimbursement form management with Google SSO, API keys, ACL, and comprehensive audit logging.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "Root",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "Root endpoint that returns API information and documentation links.\n\n**Response:**\n- API name and version\n- Link to API documentation"
+					},
+					"response": []
+				},
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Health check endpoint to verify API is running.\n\n**Response:**\n```json\n{\n  \"status\": \"healthy\",\n  \"version\": \"1.0.0\"\n}\n```"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Test Superadmin Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    try {",
+									"        var jsonData = pm.response.json();",
+									"        if (jsonData.access_token) {",
+									"            pm.collectionVariables.set(\"jwt_token\", jsonData.access_token);",
+									"            console.log(\"✓ JWT token automatically saved to collection variable 'jwt_token'\");",
+									"            console.log(\"Token: \" + jsonData.access_token.substring(0, 50) + \"...\");",
+									"            console.log(\"Operator ID: \" + jsonData.operator_id);",
+									"            console.log(\"Email: \" + jsonData.email);",
+									"        } else {",
+									"            console.log(\"⚠ Response does not contain access_token\");",
+									"            console.log(\"Response: \" + JSON.stringify(jsonData));",
+									"        }",
+									"    } catch (e) {",
+									"        console.log(\"⚠ Error parsing response: \" + e.message);",
+									"        console.log(\"Response body: \" + pm.response.text());",
+									"    }",
+									"} else {",
+									"    console.log(\"✗ Request failed with status: \" + pm.response.code);",
+									"    console.log(\"Response: \" + pm.response.text());",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "none"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/test-superadmin",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "test-superadmin"]
+						},
+						"description": "**TEST ONLY** - Create/Login as superadmin bypassing Google SSO.\n\n**Important:**\n- Only works when `ENVIRONMENT` is \"development\" or \"test\"\n- Automatically creates/updates superadmin operator (email: superadmin@test.local)\n- Superadmin has full ACL management and bypasses all permission checks\n- Use this for testing purposes only\n\n**Request:**\n- Method: POST\n- No body required (empty request)\n- Content-Type: application/json (optional but recommended)\n\n**Response (200 OK):**\n```json\n{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"bearer\",\n  \"operator_id\": 1,\n  \"email\": \"superadmin@test.local\",\n  \"name\": \"Test Superadmin\"\n}\n```\n\n**Usage:**\n1. Call this endpoint to get JWT token\n2. Token is automatically saved to `jwt_token` variable\n3. Use token in Authorization header: `Bearer {{jwt_token}}`\n4. All ACL checks will be bypassed\n\n**Auto-Save:** The JWT token is automatically extracted from the response and saved to the collection variable `jwt_token` for use in subsequent requests.\n\n**Errors:**\n- `404 Not Found`: Environment is not \"development\" or \"test\""
+					},
+					"response": []
+				},
+				{
+					"name": "Google SSO Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.access_token) {",
+									"        pm.collectionVariables.set(\"jwt_token\", jsonData.access_token);",
+									"        console.log(\"JWT token automatically saved to collection variable 'jwt_token'\");",
+									"        console.log(\"Token: \" + jsonData.access_token.substring(0, 50) + \"...\");",
+									"        console.log(\"Operator: \" + jsonData.email + \" (ID: \" + jsonData.operator_id + \")\");",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"your-google-id-token-here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/google",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "google"]
+						},
+						"description": "Authenticate with Google SSO (OAuth2/OIDC) and return JWT token.\n\n**Authentication Flow:**\n1. User authenticates with Google and receives ID token\n2. Send Google ID token to this endpoint\n3. System validates token and checks if operator exists and is active\n4. Returns JWT token for API authentication\n\n**Request Body:**\n```json\n{\n  \"token\": \"eyJhbGciOiJSUzI1NiIsImtpZCI6IjEyMzQ1NiJ9...\"\n}\n```\n\n**Response:**\n```json\n{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"bearer\",\n  \"operator_id\": 1,\n  \"email\": \"operator@example.com\",\n  \"name\": \"Operator Name\"\n}\n```\n\n**Auto-Save:** The JWT token is automatically extracted from the response and saved to the collection variable `jwt_token` for use in subsequent requests.\n\n**Errors:**\n- `401 Unauthorized`: Invalid Google token or email not found\n- `403 Forbidden`: Operator not authorized or inactive"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/me",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "auth", "me"]
+						},
+						"description": "Get current user information from JWT token.\n\n**Authentication:**\n- Requires valid JWT token in Authorization header\n- Format: `Bearer <token>`\n\n**Response:**\n```json\n{\n  \"id\": 1,\n  \"email\": \"operator@example.com\",\n  \"name\": \"Operator Name\",\n  \"is_active\": true\n}\n```\n\n**Errors:**\n- `401 Unauthorized`: Missing or invalid token\n- `404 Not Found`: Operator not found"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Forms",
+			"item": [
+				{
+					"name": "Create Form",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.form_token) {",
+									"        pm.collectionVariables.set(\"form_token\", jsonData.form_token);",
+									"        console.log(\"Form token automatically saved to collection variable 'form_token'\");",
+									"        console.log(\"Form Token: \" + jsonData.form_token);",
+									"        console.log(\"Expires At: \" + jsonData.expires_at);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": \"CLIENT123\",\n    \"policy_id\": \"POLICY456\",\n    \"service_id\": 5,\n    \"name\": \"Juan Pérez\",\n    \"dni\": \"12345678\",\n    \"cbu\": \"0123456789012345678901\",\n    \"cuit\": \"20-12345678-9\",\n    \"email\": \"juan.perez@example.com\",\n    \"order_id\": \"ORDER789\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/forms",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "forms"]
+						},
+						"description": "Create a new reimbursement form and return unique form URL.\n\n**Authentication:**\n- Requires API key in `X-API-Key` header\n- API key must be active\n\n**Request Body:**\n```json\n{\n  \"client_id\": \"string (required)\",\n  \"policy_id\": \"string (required)\",\n  \"service_id\": \"integer (required)\",\n  \"name\": \"string (required)\",\n  \"dni\": \"string (required)\",\n  \"cbu\": \"string (optional)\",\n  \"cuit\": \"string (optional)\",\n  \"email\": \"string (required, valid email)\",\n  \"order_id\": \"string (optional)\"\n}\n```\n\n**Field Descriptions:**\n- `client_id`: Client ID (required)\n- `policy_id`: Policy ID for backend API integration (required) - replaces benefit_id\n- `service_id`: Service ID for backend API (required, integer) - used when creating order in backend\n- `name`: Client name (required)\n- `dni`: Client DNI (required)\n- `cbu`: Client CBU (optional)\n- `cuit`: Client CUIT/CUIL (optional)\n- `email`: Client email (required, must be valid email)\n- `order_id`: Existing order ID if updating (optional)\n\n**Response (201 Created):**\n```json\n{\n  \"form_url\": \"/forms/abc123xyz...\",\n  \"form_token\": \"abc123xyz...\",\n  \"expires_at\": \"2024-01-16T10:30:00Z\"\n}\n```\n\n**Auto-Save:** The `form_token` is automatically extracted from the response and saved to the collection variable for use in subsequent requests.\n\n**Form Behavior:**\n- Form expires in 24 hours (configurable)\n- Form can only be submitted once\n- Form token is unique and secure\n- When submitted, creates order in backend API with `policy_id` and `service_id`\n\n**Errors:**\n- `401 Unauthorized`: Invalid or missing API key\n- `400 Bad Request`: Invalid request data"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Form Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/forms/{{form_token}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "forms", "{{form_token}}"]
+						},
+						"description": "Get form details by token. Public endpoint for form validation (used by frontend).\n\n**Authentication:**\n- No authentication required (public endpoint)\n\n**Path Parameters:**\n- `form_token`: Unique form token returned from Create Form endpoint\n\n**Response:**\n```json\n{\n  \"form_token\": \"abc123xyz...\",\n  \"name\": \"Juan Pérez\",\n  \"dni\": \"12345678\",\n  \"cbu\": \"0123456789012345678901\",\n  \"cuit\": \"20-12345678-9\",\n  \"email\": \"juan.perez@example.com\",\n  \"status\": \"pending\",\n  \"is_submitted\": false,\n  \"expires_at\": \"2024-01-16T10:30:00Z\"\n}\n```\n\n**Errors:**\n- `404 Not Found`: Form not found"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Form Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/forms/{{form_token}}/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "forms", "{{form_token}}", "status"]
+						},
+						"description": "Get form status and expiration information. Public endpoint.\n\n**Authentication:**\n- No authentication required (public endpoint)\n\n**Path Parameters:**\n- `form_token`: Unique form token\n\n**Response:**\n```json\n{\n  \"form_token\": \"abc123xyz...\",\n  \"status\": \"pending\",\n  \"is_submitted\": false,\n  \"is_expired\": false,\n  \"created_at\": \"2024-01-15T10:30:00Z\",\n  \"expires_at\": \"2024-01-16T10:30:00Z\",\n  \"submitted_at\": null\n}\n```\n\n**Status Values:**\n- `pending`: Form is active and can be submitted\n- `submitted`: Form has been submitted\n- `expired`: Form has expired (24 hours passed)\n\n**Errors:**\n- `404 Not Found`: Form not found"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Form",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.access_token) {",
+									"        pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+									"        console.log(\"Access token automatically saved to collection variable 'access_token'\");",
+									"        console.log(\"Access Token: \" + jsonData.access_token);",
+									"        console.log(\"Submission ID: \" + jsonData.submission_id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "cbu",
+									"value": "0123456789012345678901",
+									"type": "text",
+									"description": "CBU (optional, can be edited)"
+								},
+								{
+									"key": "cuit",
+									"value": "20-12345678-9",
+									"type": "text",
+									"description": "CUIT/CUIL (optional, can be edited)"
+								},
+								{
+									"key": "email",
+									"value": "juan.perez@example.com",
+									"type": "text",
+									"description": "Email (optional, can be edited)"
+								},
+								{
+									"key": "invoice",
+									"type": "file",
+									"src": [],
+									"description": "Invoice document (REQUIRED - 1 file)"
+								},
+								{
+									"key": "prescription",
+									"type": "file",
+									"src": [],
+									"description": "Medical prescription (REQUIRED - 1 file)"
+								},
+								{
+									"key": "diagnosis",
+									"type": "file",
+									"src": [],
+									"description": "Diagnosis document (OPTIONAL - up to 3 files)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/forms/{{form_token}}/submit",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "forms", "{{form_token}}", "submit"]
+						},
+						"description": "Submit a form with documents. Public endpoint (no authentication required for form submission).\n\n**Authentication:**\n- No authentication required (public endpoint)\n\n**Path Parameters:**\n- `form_token`: Unique form token (automatically used from collection variable)\n\n**Request Body (multipart/form-data):**\n- `cbu` (optional): CBU - can be edited from original form data\n- `cuit` (optional): CUIT/CUIL - can be edited from original form data\n- `email` (optional): Email - can be edited from original form data\n- `invoice` (required): Invoice document - 1 file, PDF or image\n- `prescription` (required): Medical prescription - 1 file, PDF or image\n- `diagnosis` (optional): Diagnosis documents - up to 3 files, PDF or image\n\n**File Requirements:**\n- Allowed types: PDF, JPEG, PNG, JPG\n- No size limit (configurable)\n\n**Response (201 Created):**\n```json\n{\n  \"submission_id\": 1,\n  \"access_token\": \"secure-random-hash-for-operators\",\n  \"message\": \"Form submitted successfully\"\n}\n```\n\n**Auto-Save:** The `access_token` is automatically extracted from the response and saved to the collection variable for use in document access endpoints.\n\n**What Happens:**\n1. Form is validated (not expired, not already submitted)\n2. Documents are uploaded and stored\n3. External Backend API is called to create/update reintegro service\n4. Access link is automatically generated (24h expiration, configurable)\n5. WhatsApp notification is sent via WspApi\n6. Form status is updated to \"submitted\"\n\n**Errors:**\n- `404 Not Found`: Form not found\n- `410 Gone`: Form has expired\n- `400 Bad Request`: Form already submitted or invalid file type\n- `502 Bad Gateway`: External API call failed"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Documents",
+			"item": [
+				{
+					"name": "View Submission",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/document-access/{{access_token}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "document-access", "{{access_token}}"]
+						},
+						"description": "View form submission details and all associated documents.\n\n**Authentication:**\n- Requires Google SSO JWT token in Authorization header\n- Requires valid access token in URL path\n- Requires ACL permission: `view_document` for the specific form_submission resource\n\n**Path Parameters:**\n- `access_token`: Access token returned from form submission (auto-generated, 24h expiration)\n\n**Response:**\n```json\n{\n  \"form_submission_id\": 1,\n  \"cbu\": \"0123456789012345678901\",\n  \"cuit\": \"20-12345678-9\",\n  \"email\": \"juan.perez@example.com\",\n  \"submitted_at\": \"2024-01-15T11:00:00Z\",\n  \"status\": \"pending\",\n  \"documents\": [\n    {\n      \"id\": 1,\n      \"document_type\": \"invoice\",\n      \"file_name\": \"invoice.pdf\",\n      \"file_size\": 123456,\n      \"mime_type\": \"application/pdf\",\n      \"uploaded_at\": \"2024-01-15T11:00:00Z\"\n    },\n    {\n      \"id\": 2,\n      \"document_type\": \"prescription\",\n      \"file_name\": \"prescription.pdf\",\n      \"file_size\": 98765,\n      \"mime_type\": \"application/pdf\",\n      \"uploaded_at\": \"2024-01-15T11:00:00Z\"\n    }\n  ]\n}\n```\n\n**Errors:**\n- `401 Unauthorized`: Missing or invalid JWT token\n- `403 Forbidden`: No ACL permission for this resource\n- `404 Not Found`: Invalid or expired access token\n- `410 Gone`: Access link has expired"
+					},
+					"response": []
+				},
+				{
+					"name": "Download Invoice",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/document-access/{{access_token}}/documents/{{document_id}}/invoice/download",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "document-access", "{{access_token}}", "documents", "{{document_id}}", "invoice", "download"]
+						},
+						"description": "Download invoice document. **Only invoice documents can be downloaded.** Other documents are view-only.\n\n**Authentication:**\n- Requires Google SSO JWT token in Authorization header\n- Requires valid access token in URL path\n- Requires ACL permission: `download_document` for the specific document resource\n\n**Path Parameters:**\n- `access_token`: Access token from form submission\n- `document_id`: ID of the document to download (must be invoice type)\n\n**Response:**\n- Returns file as download (binary content)\n- Content-Type: Original file MIME type\n- Content-Disposition: attachment with filename\n\n**Errors:**\n- `401 Unauthorized`: Missing or invalid JWT token\n- `403 Forbidden`: No ACL permission OR document is not an invoice\n- `404 Not Found`: Invalid access token or document not found\n- `400 Bad Request`: Document is not an invoice type"
+					},
+					"response": []
+				},
+				{
+					"name": "View Document",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/document-access/{{access_token}}/documents/{{document_id}}/view",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "document-access", "{{access_token}}", "documents", "{{document_id}}", "view"]
+						},
+						"description": "View document in read-only mode (not invoice). Use download endpoint for invoices.\n\n**Authentication:**\n- Requires Google SSO JWT token in Authorization header\n- Requires valid access token in URL path\n- Requires ACL permission: `view_document` for the specific document resource\n\n**Path Parameters:**\n- `access_token`: Access token from form submission\n- `document_id`: ID of the document to view\n\n**Response:**\n- Returns file content (binary)\n- Content-Type: Original file MIME type\n- Content-Disposition: inline (for viewing in browser)\n\n**Document Types:**\n- `prescription`: Medical prescription (view-only)\n- `diagnosis`: Diagnosis documents (view-only)\n- `invoice`: Use download endpoint instead\n\n**Errors:**\n- `401 Unauthorized`: Missing or invalid JWT token\n- `403 Forbidden`: No ACL permission\n- `404 Not Found`: Invalid access token or document not found\n- `400 Bad Request`: Document is invoice (use download endpoint)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Audit Logs",
+			"item": [
+				{
+					"name": "Get Audit Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/audit-logs?action_type=&user_type=&user_id=&resource_type=&resource_id=&status=&start_date=&end_date=&limit=100&offset=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "audit-logs"],
+							"query": [
+								{
+									"key": "action_type",
+									"value": "",
+									"description": "Filter by action type: form_created, form_submitted, document_uploaded, access_link_generated, access_link_accessed, document_viewed, document_downloaded, external_ws_called, operator_login, permission_denied"
+								},
+								{
+									"key": "user_type",
+									"value": "",
+									"description": "Filter by user type: operator, api_key, system"
+								},
+								{
+									"key": "user_id",
+									"value": "",
+									"description": "Filter by user ID (operator_id or api_key_id)"
+								},
+								{
+									"key": "resource_type",
+									"value": "",
+									"description": "Filter by resource type: form, form_submission, document, access_link"
+								},
+								{
+									"key": "resource_id",
+									"value": "",
+									"description": "Filter by resource ID"
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Filter by status: success, error"
+								},
+								{
+									"key": "start_date",
+									"value": "",
+									"description": "Start date filter (ISO 8601 format, e.g., 2024-01-15T00:00:00Z)"
+								},
+								{
+									"key": "end_date",
+									"value": "",
+									"description": "End date filter (ISO 8601 format, e.g., 2024-01-15T23:59:59Z)"
+								},
+								{
+									"key": "limit",
+									"value": "100",
+									"description": "Maximum number of results (max 1000)"
+								},
+								{
+									"key": "offset",
+									"value": "0",
+									"description": "Offset for pagination"
+								}
+							]
+						},
+						"description": "Query audit logs with comprehensive filtering options. All actions in the system are logged.\n\n**Authentication:**\n- Requires Google SSO JWT token in Authorization header\n- Requires ACL permission: `view_audit_logs`\n\n**Query Parameters (all optional):**\n- `action_type`: Filter by specific action (see action types below)\n- `user_type`: Filter by user type (operator, api_key, system)\n- `user_id`: Filter by specific user ID\n- `resource_type`: Filter by resource type\n- `resource_id`: Filter by specific resource ID\n- `status`: Filter by status (success, error)\n- `start_date`: Start date for date range filter (ISO format)\n- `end_date`: End date for date range filter (ISO format)\n- `limit`: Maximum results (default: 100, max: 1000)\n- `offset`: Pagination offset (default: 0)\n\n**Action Types:**\n- `form_created`: Form was created\n- `form_submitted`: Form was submitted\n- `document_uploaded`: Document was uploaded\n- `access_link_generated`: Access link was auto-generated\n- `access_link_accessed`: Access link was accessed\n- `document_viewed`: Document was viewed\n- `document_downloaded`: Invoice was downloaded\n- `external_ws_called`: External API was called\n- `operator_login`: Operator logged in via Google SSO\n- `permission_denied`: ACL permission was denied\n\n**Response:**\n```json\n{\n  \"logs\": [\n    {\n      \"id\": 1,\n      \"action_type\": \"form_created\",\n      \"user_type\": \"api_key\",\n      \"user_id\": 1,\n      \"resource_type\": \"form\",\n      \"resource_id\": 1,\n      \"ip_address\": \"192.168.1.1\",\n      \"user_agent\": \"Mozilla/5.0...\",\n      \"request_data\": {...},\n      \"response_data\": {...},\n      \"status\": \"success\",\n      \"error_message\": null,\n      \"created_at\": \"2024-01-15T10:30:00Z\"\n    }\n  ],\n  \"total\": 150,\n  \"limit\": 100,\n  \"offset\": 0\n}\n```\n\n**Example Queries:**\n- Get all form submissions: `?action_type=form_submitted`\n- Get errors: `?status=error`\n- Get logs for specific operator: `?user_type=operator&user_id=1`\n- Get logs in date range: `?start_date=2024-01-15T00:00:00Z&end_date=2024-01-15T23:59:59Z`\n\n**Errors:**\n- `401 Unauthorized`: Missing or invalid JWT token\n- `403 Forbidden`: No ACL permission to view audit logs"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8111",
+			"type": "string",
+			"description": "Base URL for the API (default: localhost:8111)"
+		},
+		{
+			"key": "api_key",
+			"value": "your-api-key-here",
+			"type": "string",
+			"description": "API key for service-to-service authentication (use X-API-Key header). Create with: ./create_api_key.sh \"Key Name\""
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string",
+			"description": "JWT token from Google SSO login or test superadmin login. Use in Authorization header: Bearer <token>"
+		},
+		{
+			"key": "form_token",
+			"value": "",
+			"type": "string",
+			"description": "Form token returned from Create Form endpoint. Used to access and submit forms."
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string",
+			"description": "Access token returned from form submission. Used by operators to view documents (24h expiration)."
+		},
+		{
+			"key": "document_id",
+			"value": "",
+			"type": "string",
+			"description": "Document ID from View Submission response. Used to download/view specific documents."
+		}
+	]
+}

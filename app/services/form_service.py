@@ -15,7 +15,7 @@ from app.core.exceptions import (
     ExternalAPIException
 )
 from app.external.backend_client import BackendAPIClient
-from app.external.wsp_api_client import WspAPIClient
+from app.external.hsm_client import get_hsm_client, HSMClient
 from app.services.operator_service import OperatorService
 from app.services.document_service import DocumentService, generate_document_url
 from app.models.document import Document, DocumentType
@@ -30,7 +30,7 @@ class FormService:
     
     def __init__(self):
         self.backend_client = BackendAPIClient()
-        self.wsp_client = WspAPIClient()
+        self.hsm_client = get_hsm_client()
         self.document_service = DocumentService()
     
     @staticmethod

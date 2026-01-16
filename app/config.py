@@ -68,12 +68,14 @@ class Settings(BaseSettings):
     ORGANIZATION_ID: int = Field(default=305, description="Organization ID for backend API (configurable)")
     API_BASE_URL: str = Field(default="http://localhost:8111", description="Base URL for this API (used for document URLs)")
     
-    # External APIs - WspApi
-    WSP_API_URL: str = Field(..., description="WspApi base URL")
-    WSP_API_KEY: str = Field(default="", description="WspApi API key (if required)")
-    WSP_API_OAUTH_TOKEN: str = Field(default="", description="WspApi OAuth token (if required)")
-    WSP_API_TIMEOUT: int = Field(default=30, description="WspApi timeout in seconds")
-    WSP_API_RETRY_ATTEMPTS: int = Field(default=3, description="WspApi retry attempts")
+    # External APIs - HSM (WhatsApp Highly Structured Messages)
+    HSM_API_URL: str = Field(default="", description="HSM API base URL")
+    HSM_CLIENT_ID: str = Field(default="", description="HSM API client ID for authentication")
+    HSM_CLIENT_SECRET: str = Field(default="", description="HSM API client secret for authentication")
+    HSM_PROVIDER: str = Field(default="botmaker", description="HSM provider (botmaker, whatsapp_business)")
+    HSM_ORIGIN_PHONE: str = Field(default="", description="Origin phone number for HSM messages")
+    HSM_DEFAULT_LANGUAGE: str = Field(default="es", description="Default language for HSM templates")
+    HSM_API_TIMEOUT: int = Field(default=30, description="HSM API timeout in seconds")
     
     # Server Configuration
     WORKERS: int = Field(default=4, description="Number of Uvicorn workers (4-5)")

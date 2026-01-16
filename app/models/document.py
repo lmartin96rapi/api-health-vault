@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from app.database import Base
+from app.models.mixins import SoftDeleteMixin
 
 
 class DocumentType(str, enum.Enum):
@@ -12,11 +13,11 @@ class DocumentType(str, enum.Enum):
     DIAGNOSIS = "diagnosis"  # diagnóstico e indicaciones terapéuticas
 
 
-class Document(Base):
+class Document(SoftDeleteMixin, Base):
     """Document model - stores uploaded files metadata."""
-    
+
     __tablename__ = "documents"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     form_submission_id = Column(Integer, ForeignKey("form_submissions.id"), nullable=False, index=True)
     document_type = Column(SQLEnum(DocumentType), nullable=False)
@@ -25,7 +26,7 @@ class Document(Base):
     file_size = Column(Integer, nullable=False)  # Size in bytes
     mime_type = Column(String, nullable=False)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
+
     # Relationships
     form_submission = relationship("FormSubmission", back_populates="documents")
 

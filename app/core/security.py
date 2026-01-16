@@ -59,8 +59,8 @@ async def verify_google_token(token: str) -> Optional[dict]:
             settings.GOOGLE_CLIENT_ID
         )
         
-        # Verify the issuer
-        if idinfo["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
+        # Verify the issuer - only accept the standard HTTPS issuer
+        if idinfo["iss"] != "https://accounts.google.com":
             raise ValueError("Wrong issuer")
         
         return {

@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from app.models.form import Form, FormSubmission, FormStatus
 from app.config import settings
 from app.core.exceptions import (
@@ -17,7 +18,8 @@ from app.external.backend_client import BackendAPIClient
 from app.external.wsp_api_client import WspAPIClient
 from app.services.operator_service import OperatorService
 from app.services.document_service import DocumentService, generate_document_url
-from app.models.document import DocumentType
+from app.models.document import Document, DocumentType
+from app.models.document_access_link import DocumentAccessLink
 from app.core.logging_utils import mask_sensitive_data, sanitize_log_message
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,26 @@ class FormService:
         return secrets.token_urlsafe(32)
     
     @staticmethod
+    async def get_form_by_idempotency_key(
+        db: AsyncSession,
+        idempotency_key: str
+    ) -> Optional[Form]:
+        """
+        Get a form by idempotency key.
+
+        Args:
+            db: Database session
+            idempotency_key: The idempotency key to search for
+
+        Returns:
+            Form if found, None otherwise
+        """
+        result = await db.execute(
+            select(Form).where(Form.idempotency_key == idempotency_key)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def create_form(
         db: AsyncSession,
         client_id: str,
@@ -53,11 +75,12 @@ class FormService:
         cuit: Optional[str] = None,
         email: str = "",
         order_id: Optional[str] = None,
-        request_id: Optional[str] = None
-    ) -> Form:
+        request_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None
+    ) -> Tuple[Form, bool]:
         """
-        Create a new form with unique token.
-        
+        Create a new form with unique token, with idempotency support.
+
         Args:
             db: Database session
             client_id: Client ID
@@ -70,18 +93,35 @@ class FormService:
             email: Client email
             order_id: Order ID (optional)
             request_id: Request ID (UUID) for request tracing
-            
+            idempotency_key: Idempotency key for duplicate request prevention
+
         Returns:
-            Created Form record
+            Tuple of (Form record, was_created: bool)
+            - If idempotency_key exists, returns existing form with was_created=False
+            - Otherwise creates new form with was_created=True
         """
+        # Check idempotency key if provided
+        if idempotency_key:
+            existing_form = await FormService.get_form_by_idempotency_key(db, idempotency_key)
+            if existing_form:
+                logger.info(
+                    sanitize_log_message(
+                        "Returning existing form due to idempotency key",
+                        idempotency_key=idempotency_key,
+                        form_id=existing_form.id
+                    )
+                )
+                return existing_form, False
+
         # Generate unique form token
         form_token = FormService._generate_form_token()
-        
+
         # Calculate expiration (24h)
         expires_at = datetime.utcnow() + timedelta(hours=settings.FORM_EXPIRATION_HOURS)
-        
+
         form = Form(
             form_token=form_token,
+            idempotency_key=idempotency_key,
             client_id=client_id,
             policy_id=policy_id,
             service_id=service_id,
@@ -94,10 +134,28 @@ class FormService:
             status=FormStatus.PENDING,
             expires_at=expires_at
         )
-        
+
         db.add(form)
-        await db.commit()
-        await db.refresh(form)
+
+        try:
+            await db.commit()
+            await db.refresh(form)
+        except IntegrityError as e:
+            # Handle race condition: another request created a form with the same idempotency key
+            await db.rollback()
+            if idempotency_key:
+                existing_form = await FormService.get_form_by_idempotency_key(db, idempotency_key)
+                if existing_form:
+                    logger.info(
+                        sanitize_log_message(
+                            "Returning existing form after idempotency key race condition",
+                            idempotency_key=idempotency_key,
+                            form_id=existing_form.id
+                        )
+                    )
+                    return existing_form, False
+            # If not an idempotency key issue, re-raise
+            raise
         
         # Log form creation with masked sensitive data
         masked_data = mask_sensitive_data({
@@ -119,11 +177,12 @@ class FormService:
                 FormID=form.id,
                 FormToken=form.form_token,
                 ExpiresAt=form.expires_at.isoformat(),
+                IdempotencyKey=idempotency_key,
                 Data=masked_data
             )
         )
-        
-        return form
+
+        return form, True
     
     @staticmethod
     async def get_form_by_token(
@@ -258,7 +317,7 @@ class FormService:
     ) -> None:
         """
         Call backend API to create/update order after documents are uploaded.
-        
+
         Args:
             db: Database session
             form_submission_id: Form submission ID
@@ -266,10 +325,6 @@ class FormService:
             access_token: Access token for generating URLs
         """
         # Get form submission and form
-        from sqlalchemy import select
-        from app.models.document import Document
-        from app.models.document_access_link import DocumentAccessLink
-        
         result = await db.execute(
             select(FormSubmission).where(FormSubmission.id == form_submission_id)
         )
@@ -432,18 +487,7 @@ class FormService:
                     Status=form_submission.status
                 )
             )
-            
-            # Send WhatsApp notification (non-blocking, don't fail if it fails)
-            #try:
-            #    await self.wsp_client.send_submission_confirmation(
-            #        phone_number=form.email,  # Adjust based on actual phone field
-            #        client_name=form.name,
-            #        access_link=f"{access_link.access_token}"
-            #    )
-            #except Exception:
-            #    # Log error but don't fail the submission
-            #    pass
-            
+
             return form_submission, access_link.access_token
             
         except ExternalAPIException as e:

@@ -2,18 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Backgrou
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.api.deps import get_current_operator_id, get_document_service
 from app.schemas.document import DocumentAccessResponse, DocumentResponse
 from app.services.operator_service import OperatorService
 from app.services.document_service import DocumentService
 from app.services.audit_service import AuditService
 from app.models.document import DocumentType
 from app.models.audit_log import ActionType, UserType
-from app.core.security import decode_access_token
 from app.core.acl import require_resource_permission
 from app.core.exceptions import AccessLinkInvalidException
 
 router = APIRouter()
-document_service = DocumentService()
 
 
 @router.get("/{access_token}", response_model=DocumentAccessResponse)
@@ -22,7 +21,8 @@ async def view_submission(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    operator_id: int = Depends(get_current_operator_id),
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     View form submission details and documents.
@@ -38,25 +38,7 @@ async def view_submission(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid or expired access link"
         )
-    
-    # Validate Google SSO token
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = auth_header.split(" ")[1]
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
-    operator_id = payload.get("sub")  # Adjust based on your JWT structure
-    
+
     # Check ACL permission
     await require_resource_permission(
         db=db,
@@ -65,12 +47,12 @@ async def view_submission(
         resource_type="form_submission",
         resource_id=form_submission.id
     )
-    
+
     # Get documents
     documents = await document_service.get_documents_by_submission(
         db, form_submission.id
     )
-    
+
     # Log access
     await AuditService.log_action_background(
         background_tasks=background_tasks,
@@ -83,7 +65,7 @@ async def view_submission(
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent")
     )
-    
+
     return DocumentAccessResponse(
         form_submission_id=form_submission.id,
         cbu=form_submission.cbu,
@@ -101,7 +83,9 @@ async def download_invoice(
     document_id: int,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    operator_id: int = Depends(get_current_operator_id),
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     Download invoice document.
@@ -112,7 +96,7 @@ async def download_invoice(
     access_link, form_submission = await OperatorService.get_access_link_with_submission(
         db, access_token
     )
-    
+
     # Get document
     document = await document_service.get_document(db, document_id)
     if not document or document.form_submission_id != form_submission.id:
@@ -120,32 +104,14 @@ async def download_invoice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found"
         )
-    
+
     # Only invoice can be downloaded
     if document.document_type != DocumentType.INVOICE:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only invoice documents can be downloaded"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only invoice documents can be downloaded. Use the view endpoint for other document types."
         )
-    
-    # Validate Google SSO (same as view_submission)
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = auth_header.split(" ")[1]
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
-    operator_id = payload.get("sub")
-    
+
     # Check ACL permission
     await require_resource_permission(
         db=db,
@@ -154,7 +120,7 @@ async def download_invoice(
         resource_type="document",
         resource_id=document_id
     )
-    
+
     # Get file path
     file_path = await document_service.get_document_file_path(db, document_id)
     if not file_path:
@@ -162,7 +128,7 @@ async def download_invoice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found"
         )
-    
+
     # Log download
     await AuditService.log_action_background(
         background_tasks=background_tasks,
@@ -175,7 +141,7 @@ async def download_invoice(
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent")
     )
-    
+
     return FileResponse(
         path=str(file_path),
         filename=document.file_name,
@@ -189,7 +155,9 @@ async def view_document(
     document_id: int,
     request: Request,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    operator_id: int = Depends(get_current_operator_id),
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     View document (read-only, not invoice).
@@ -199,7 +167,7 @@ async def view_document(
     access_link, form_submission = await OperatorService.get_access_link_with_submission(
         db, access_token
     )
-    
+
     # Get document
     document = await document_service.get_document(db, document_id)
     if not document or document.form_submission_id != form_submission.id:
@@ -207,32 +175,14 @@ async def view_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found"
         )
-    
+
     # Invoice should use download endpoint
     if document.document_type == DocumentType.INVOICE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Use download endpoint for invoice"
         )
-    
-    # Validate Google SSO
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = auth_header.split(" ")[1]
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
-    operator_id = payload.get("sub")
-    
+
     # Check ACL permission
     await require_resource_permission(
         db=db,
@@ -241,7 +191,7 @@ async def view_document(
         resource_type="document",
         resource_id=document_id
     )
-    
+
     # Get file path
     file_path = await document_service.get_document_file_path(db, document_id)
     if not file_path:
@@ -249,7 +199,7 @@ async def view_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found"
         )
-    
+
     # Log view
     await AuditService.log_action_background(
         background_tasks=background_tasks,
@@ -262,7 +212,7 @@ async def view_document(
         ip_address=request.client.host,
         user_agent=request.headers.get("user-agent")
     )
-    
+
     return FileResponse(
         path=str(file_path),
         filename=document.file_name,

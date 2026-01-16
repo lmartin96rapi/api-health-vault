@@ -15,9 +15,13 @@ from app.core.exceptions import (
     ExternalAPIException,
     PermissionDeniedException,
 )
+from app.core.circuit_breaker import CircuitBreakerOpenException
 from app.core.logging_config import setup_logging, cleanup_old_logs
 from app.core.logging_utils import sanitize_log_message
 from app.middleware.logging_middleware import LoggingMiddleware
+from app.middleware.rate_limit import setup_rate_limiting
+from app.middleware.csrf import setup_csrf_protection
+from app.middleware.security import setup_security_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +50,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Security middleware (request size limit + security headers)
+setup_security_middleware(app, max_request_size=settings.MAX_REQUEST_SIZE)
+
 # Logging middleware (after CORS, before routes)
 if settings.LOG_ENABLE_REQUEST_LOGGING:
     app.add_middleware(LoggingMiddleware)
+
+# CSRF protection middleware
+setup_csrf_protection(app)
+
+# Rate limiting
+setup_rate_limiting(app)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -191,6 +204,23 @@ async def permission_denied_handler(request: Request, exc: PermissionDeniedExcep
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail}
+    )
+
+
+@app.exception_handler(CircuitBreakerOpenException)
+async def circuit_breaker_handler(request: Request, exc: CircuitBreakerOpenException):
+    logger.warning(
+        sanitize_log_message(
+            "Circuit breaker open",
+            Path=request.url.path,
+            Method=request.method,
+            IP=request.client.host if request.client else None,
+            Message=exc.message
+        )
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Service temporarily unavailable. Please try again later."}
     )
 
 

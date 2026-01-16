@@ -1,3 +1,4 @@
+import secrets
 from typing import Optional
 from fastapi import Header, HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,9 +20,10 @@ def hash_api_key(api_key: str) -> str:
 
 
 def verify_api_key(plain_key: str, hashed_key: str) -> bool:
-    """Verify an API key against its hash."""
+    """Verify an API key against its hash using constant-time comparison."""
     computed_hash = sha256(plain_key.encode('utf-8')).hexdigest()
-    return computed_hash == hashed_key
+    # Use constant-time comparison to prevent timing attacks
+    return secrets.compare_digest(computed_hash, hashed_key)
 
 
 async def get_api_key_from_header(
@@ -30,32 +32,35 @@ async def get_api_key_from_header(
 ) -> Optional[ApiKey]:
     """
     Extract and validate API key from header.
-    
+
+    Uses direct hash lookup (O(1)) instead of iterating through all keys
+    to prevent timing attacks and improve performance.
+
     Args:
         x_api_key: API key from X-API-Key header
         db: Database session
-        
+
     Returns:
         ApiKey model if valid, None otherwise
     """
     if not x_api_key:
         return None
-    
+
     if not db:
         return None
-    
-    # Query all active API keys
+
+    # Hash the provided key and query directly by hash
+    # This is O(1) and prevents timing attacks
+    key_hash = hash_api_key(x_api_key)
+
     result = await db.execute(
-        select(ApiKey).where(ApiKey.is_active == True)
+        select(ApiKey).where(
+            ApiKey.key_hash == key_hash,
+            ApiKey.is_active == True
+        )
     )
-    api_keys = result.scalars().all()
-    
-    # Check each API key hash
-    for api_key in api_keys:
-        if verify_api_key(x_api_key, api_key.key_hash):
-            return api_key
-    
-    return None
+
+    return result.scalar_one_or_none()
 
 
 async def validate_api_key(

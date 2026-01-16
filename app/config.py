@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # File Storage
     UPLOAD_DIR: str = Field(default="./uploads", description="Directory for file uploads")
     MAX_FILE_SIZE: int = Field(default=10485760, description="Max file size in bytes (default 10MB)")
+    MAX_REQUEST_SIZE: int = Field(default=52428800, description="Max request body size in bytes (default 50MB)")
     ALLOWED_FILE_TYPES: List[str] = Field(
         default=["application/pdf", "image/jpeg", "image/png", "image/jpg"],
         description="Allowed MIME types for file uploads"
@@ -93,11 +94,31 @@ class Settings(BaseSettings):
         description="Log format"
     )
     
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = Field(default=True, description="Enable rate limiting")
+    RATE_LIMIT_DEFAULT: str = Field(default="100/minute", description="Default rate limit")
+    RATE_LIMIT_AUTH: str = Field(default="5/minute", description="Rate limit for auth endpoints")
+    RATE_LIMIT_FORMS: str = Field(default="10/minute", description="Rate limit for form creation")
+    RATE_LIMIT_STORAGE_URI: str = Field(default="memory://", description="Rate limit storage URI")
+
+    # CSRF Protection
+    CSRF_ENABLED: bool = Field(default=True, description="Enable CSRF protection")
+    CSRF_SECRET: str = Field(default="", description="CSRF secret key (defaults to SECRET_KEY)")
+
+    # Circuit Breaker
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=5, description="Failures before circuit opens")
+    CIRCUIT_BREAKER_RECOVERY_TIMEOUT: int = Field(default=30, description="Seconds before attempting reset")
+    CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS: int = Field(default=3, description="Max calls in half-open state")
+
     def get_log_level(self) -> str:
         """Get log level based on environment."""
         if self.ENVIRONMENT.lower() in ["development", "dev", "test"]:
             return "DEBUG"
         return self.LOG_LEVEL.upper()
+
+    def get_csrf_secret(self) -> str:
+        """Get CSRF secret (falls back to SECRET_KEY)."""
+        return self.CSRF_SECRET or self.SECRET_KEY
 
 
 settings = Settings()

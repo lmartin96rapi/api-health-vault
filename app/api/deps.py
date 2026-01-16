@@ -1,5 +1,7 @@
+import uuid
 from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.operator import Operator
@@ -8,34 +10,147 @@ from app.core.api_key import validate_api_key
 from app.core.security import decode_access_token
 from app.services.operator_service import OperatorService
 from app.services.audit_service import AuditService
+from app.services.form_service import FormService
+from app.services.document_service import DocumentService
+from app.services.acl_service import ACLService
 from app.models.audit_log import ActionType, UserType
 
 
+# HTTP Bearer scheme for JWT authentication
+bearer_scheme = HTTPBearer(auto_error=False)
+bearer_scheme_required = HTTPBearer(auto_error=True)
+
+
 async def get_current_operator(
-    db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = None
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme_required),
+    db: AsyncSession = Depends(get_db)
 ) -> Operator:
     """
     Get current operator from JWT token.
     Dependency for endpoints requiring operator authentication.
+
+    Raises:
+        HTTPException: 401 if token is missing/invalid, 403 if operator inactive
     """
-    # This will be set by the endpoint from the Authorization header
-    # For now, this is a placeholder - actual implementation in endpoints
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated"
-    )
+    payload = decode_access_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    operator_id = payload.get("sub")
+    if not operator_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    try:
+        operator = await OperatorService.get_operator_by_id(db, int(operator_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid operator ID in token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    if not operator:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Operator not found"
+        )
+
+    if not operator.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operator account is inactive"
+        )
+
+    return operator
 
 
 async def get_current_operator_optional(
-    db: AsyncSession = Depends(get_db),
-    authorization: Optional[str] = None
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db)
 ) -> Optional[Operator]:
     """
     Get current operator from JWT token (optional).
-    Returns None if not authenticated.
+    Returns None if not authenticated or token is invalid.
     """
+    if not credentials:
+        return None
+
+    payload = decode_access_token(credentials.credentials)
+    if not payload:
+        return None
+
+    operator_id = payload.get("sub")
+    if not operator_id:
+        return None
+
+    try:
+        operator = await OperatorService.get_operator_by_id(db, int(operator_id))
+        if operator and operator.is_active:
+            return operator
+    except (ValueError, AttributeError):
+        pass
+
     return None
+
+
+async def get_current_operator_id(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme_required),
+) -> int:
+    """
+    Get current operator ID from JWT token without database lookup.
+    Use when you only need the ID, not the full operator object.
+
+    Raises:
+        HTTPException: 401 if token is missing/invalid
+    """
+    payload = decode_access_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    operator_id = payload.get("sub")
+    if not operator_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    try:
+        return int(operator_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid operator ID in token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+
+# Service Dependencies for Dependency Injection
+def get_form_service() -> FormService:
+    """Get FormService instance."""
+    return FormService()
+
+
+def get_document_service() -> DocumentService:
+    """Get DocumentService instance."""
+    return DocumentService()
+
+
+def get_acl_service() -> ACLService:
+    """Get ACLService instance."""
+    return ACLService()
 
 
 class AuditContext:
@@ -61,7 +176,6 @@ class AuditContext:
         """
         # Get or generate request ID from request state
         if not hasattr(request.state, "request_id"):
-            import uuid
             request.state.request_id = str(uuid.uuid4())
         
         self.request_id = request.state.request_id

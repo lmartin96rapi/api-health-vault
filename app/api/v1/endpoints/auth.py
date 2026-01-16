@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.api.deps import get_current_operator
 from app.schemas.auth import GoogleAuthRequest, GoogleAuthResponse, CurrentUserResponse
 from app.services.operator_service import OperatorService
 from app.services.audit_service import AuditService
@@ -74,46 +75,16 @@ async def google_auth(
 
 @router.get("/me", response_model=CurrentUserResponse)
 async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    authorization: str = None
+    current_operator: Operator = Depends(get_current_operator)
 ):
     """
     Get current user information from JWT token.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    from app.core.security import decode_access_token
-    
-    token = auth_header.split(" ")[1]
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
-    operator_id = int(payload.get("sub"))
-    operator = await OperatorService.get_operator_by_email(
-        db, payload.get("email")
-    )
-    
-    if not operator or operator.id != operator_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Operator not found"
-        )
-    
     return CurrentUserResponse(
-        id=operator.id,
-        email=operator.google_email,
-        name=operator.name,
-        is_active=operator.is_active
+        id=current_operator.id,
+        email=current_operator.google_email,
+        name=current_operator.name,
+        is_active=current_operator.is_active
     )
 
 

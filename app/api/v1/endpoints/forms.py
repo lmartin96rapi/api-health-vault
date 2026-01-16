@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Form, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.form import (
@@ -20,26 +20,41 @@ from fastapi import UploadFile, File, Form
 from app.core.api_key import validate_api_key
 from app.models.api_key import ApiKey
 from app.core.logging_utils import sanitize_log_message, get_request_id
-from app.api.deps import AuditContext, get_audit_context, get_audit_context_with_api_key
+from app.core.exceptions import (
+    FormExpiredException,
+    FormAlreadySubmittedException,
+    InvalidFormTokenException,
+    DocumentUploadException,
+    ExternalAPIException,
+)
+from app.api.deps import (
+    AuditContext,
+    get_audit_context,
+    get_audit_context_with_api_key,
+    get_form_service,
+    get_document_service
+)
+from app.middleware.rate_limit import limiter
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-form_service = FormService()
-document_service = DocumentService()
 
 
 @router.post("", response_model=FormCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_form(
     request: FormCreateRequest,
     audit_context: AuditContext = Depends(get_audit_context_with_api_key),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key")
 ):
     """
     Create a new form and return form URL.
     Requires API key authentication.
+    Supports idempotency via Idempotency-Key header.
     """
-    form = await FormService.create_form(
+    form, was_created = await FormService.create_form(
         db=db,
         client_id=request.client_id,
         policy_id=request.policy_id,
@@ -50,20 +65,22 @@ async def create_form(
         cuit=request.cuit,
         email=request.email,
         order_id=request.order_id,
-        request_id=audit_context.request_id
+        request_id=audit_context.request_id,
+        idempotency_key=idempotency_key
     )
-    
+
     # Generate form URL (adjust base URL as needed)
     form_url = f"/forms/{form.form_token}"
-    
-    # Log action using audit context
-    await audit_context.log_action(
-        action_type=ActionType.FORM_CREATED,
-        resource_type="form",
-        resource_id=form.id,
-        request_data=request.dict()
-    )
-    
+
+    # Only log action if form was newly created (not idempotent return)
+    if was_created:
+        await audit_context.log_action(
+            action_type=ActionType.FORM_CREATED,
+            resource_type="form",
+            resource_id=form.id,
+            request_data=request.dict()
+        )
+
     return FormCreateResponse(
         form_url=form_url,
         form_token=form.form_token,
@@ -72,22 +89,25 @@ async def create_form(
 
 
 @router.get("/{form_token}", response_model=FormDetailResponse)
+@limiter.limit("30/minute")
 async def get_form(
+    request: Request,
     form_token: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get form details by token.
     Public endpoint for form validation.
+    Rate limited to prevent token enumeration.
     """
     form = await FormService.get_form_by_token(db, form_token)
-    
+
     if not form:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Form not found"
         )
-    
+
     return FormDetailResponse(
         form_token=form.form_token,
         name=form.name,
@@ -102,13 +122,16 @@ async def get_form(
 
 
 @router.get("/{form_token}/status", response_model=FormStatusResponse)
+@limiter.limit("30/minute")
 async def get_form_status(
+    request: Request,
     form_token: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get form status.
     Public endpoint.
+    Rate limited to prevent token enumeration.
     """
     return await FormService.get_form_status(db, form_token)
 
@@ -123,7 +146,9 @@ async def submit_form(
     cuit: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     audit_context: AuditContext = Depends(get_audit_context),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    form_service: FormService = Depends(get_form_service),
+    document_service: DocumentService = Depends(get_document_service)
 ):
     """
     Submit a form with documents.
@@ -137,13 +162,13 @@ async def submit_form(
         cuit=cuit,
         email=email
     )
-    
+
     # Capture IDs before try block to avoid session issues in exception handler
     form_submission_id = form_submission.id if form_submission else None
     request_id = audit_context.request_id
-    
+
     uploaded_documents = []
-    
+
     try:
         # Upload invoice (required)
         invoice_doc = await document_service.upload_document(
@@ -153,7 +178,7 @@ async def submit_form(
             file=invoice
         )
         uploaded_documents.append(invoice_doc)
-        
+
         # Upload prescription (required)
         prescription_doc = await document_service.upload_document(
             db=db,
@@ -162,7 +187,7 @@ async def submit_form(
             file=prescription
         )
         uploaded_documents.append(prescription_doc)
-        
+
         # Upload diagnosis documents (optional, up to 3)
         for i, diag_file in enumerate(diagnosis[:3]):
             diag_doc = await document_service.upload_document(
@@ -172,7 +197,7 @@ async def submit_form(
                 file=diag_file
             )
             uploaded_documents.append(diag_doc)
-        
+
         # Now call backend API with invoice URL (after documents are uploaded)
         await form_service.call_backend_api(
             db=db,
@@ -180,7 +205,7 @@ async def submit_form(
             invoice_document_id=invoice_doc.id,
             access_token=access_token
         )
-        
+
         # Log actions using audit context
         await audit_context.log_action(
             action_type=ActionType.FORM_SUBMITTED,
@@ -188,19 +213,68 @@ async def submit_form(
             resource_id=form_submission.id,
             request_data={"form_token": form_token}
         )
-        
+
         for doc in uploaded_documents:
             await audit_context.log_action(
                 action_type=ActionType.DOCUMENT_UPLOADED,
                 resource_type="document",
                 resource_id=doc.id
             )
-        
+
         return FormSubmitResponse(
             submission_id=form_submission.id,
             access_token=access_token
         )
-        
+
+    except (FormExpiredException, FormAlreadySubmittedException, InvalidFormTokenException) as e:
+        # Re-raise known form exceptions - they have proper user-facing messages
+        raise
+
+    except DocumentUploadException as e:
+        # Document upload errors have user-facing messages
+        logger.warning(
+            sanitize_log_message(
+                "Document upload failed during form submission",
+                RequestID=request_id,
+                FormToken=form_token,
+                FormSubmissionID=form_submission_id,
+                Detail=e.detail
+            )
+        )
+        # Clean up on failure
+        if form_submission_id:
+            try:
+                await document_service.cleanup_failed_uploads(db, form_submission_id)
+            except Exception as cleanup_error:
+                logger.error(
+                    sanitize_log_message(
+                        "Failed to cleanup documents after upload error",
+                        RequestID=request_id,
+                        FormSubmissionID=form_submission_id,
+                        CleanupError=str(cleanup_error)
+                    )
+                )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.detail
+        )
+
+    except ExternalAPIException as e:
+        # External API errors - log details but return generic message
+        logger.error(
+            sanitize_log_message(
+                "External API error during form submission",
+                RequestID=request_id,
+                FormToken=form_token,
+                FormSubmissionID=form_submission_id,
+                Detail=e.detail
+            )
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Form submission failed due to external service error. Please try again later."
+        )
+
     except Exception as e:
         # Log the exception with full traceback and request ID
         logger.exception(
@@ -214,7 +288,7 @@ async def submit_form(
                 ErrorMessage=str(e) or repr(e)
             )
         )
-        
+
         # Clean up on failure
         if form_submission_id:
             try:
@@ -228,11 +302,16 @@ async def submit_form(
                         CleanupError=str(cleanup_error)
                     )
                 )
-        
-        # Raise HTTP exception with error message
-        error_message = str(e) if str(e) else f"{type(e).__name__}: {repr(e)}"
+
+        # Return generic error message in production, detailed in development
+        if settings.ENVIRONMENT == "production":
+            detail = "Form submission failed. Please try again later."
+        else:
+            error_message = str(e) if str(e) else f"{type(e).__name__}: {repr(e)}"
+            detail = f"Form submission failed: {error_message}"
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Form submission failed: {error_message}"
+            detail=detail
         )
 

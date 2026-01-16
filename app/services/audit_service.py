@@ -1,11 +1,12 @@
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from fastapi import BackgroundTasks
 from app.models.audit_log import AuditLog, ActionType, UserType
 from app.config import settings
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +112,59 @@ class AuditService:
             raise
     
     @staticmethod
+    async def _log_action_with_new_session(
+        action_type: ActionType,
+        user_type: UserType,
+        user_id: Optional[int] = None,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[int] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        request_data: Optional[Dict[str, Any]] = None,
+        response_data: Optional[Dict[str, Any]] = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        request_id: Optional[str] = None
+    ) -> None:
+        """
+        Log action with its own database session (for background tasks).
+
+        Creates a new database session to avoid issues with request-scoped
+        sessions being closed before the background task runs.
+        """
+        try:
+            async with AsyncSessionLocal() as db:
+                await AuditService.log_action(
+                    db=db,
+                    action_type=action_type,
+                    user_type=user_type,
+                    user_id=user_id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    request_data=request_data,
+                    response_data=response_data,
+                    status=status,
+                    error_message=error_message,
+                    request_id=request_id
+                )
+        except Exception as e:
+            # Log but don't raise - background task failures shouldn't crash anything
+            logger.error(
+                f"Background audit log failed: {str(e)}",
+                extra={
+                    "action_type": action_type.value if action_type else None,
+                    "user_type": user_type.value if user_type else None,
+                    "request_id": request_id,
+                    "error": str(e)
+                }
+            )
+
+    @staticmethod
     async def log_action_background(
         background_tasks: BackgroundTasks,
-        db: AsyncSession,
+        db: AsyncSession,  # Kept for backward compatibility but not used
         action_type: ActionType,
         user_type: UserType,
         user_id: Optional[int] = None,
@@ -129,10 +180,14 @@ class AuditService:
     ) -> None:
         """
         Schedule audit logging as a background task (non-blocking).
-        
+
+        Note: The db parameter is kept for backward compatibility but is not used.
+        Background tasks create their own database session to avoid race conditions
+        with request-scoped sessions that may be closed before the task runs.
+
         Args:
             background_tasks: FastAPI BackgroundTasks instance
-            db: Database session
+            db: Database session (unused, kept for backward compatibility)
             action_type: Type of action
             user_type: Type of user
             user_id: ID of the user
@@ -146,9 +201,9 @@ class AuditService:
             error_message: Error message if status is error
             request_id: Request ID (UUID) for request tracing
         """
+        # Use wrapper that creates its own session to avoid session lifecycle issues
         background_tasks.add_task(
-            AuditService.log_action,
-            db=db,
+            AuditService._log_action_with_new_session,
             action_type=action_type,
             user_type=user_type,
             user_id=user_id,
@@ -177,10 +232,10 @@ class AuditService:
         end_date: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0
-    ) -> list[AuditLog]:
+    ) -> Tuple[List[AuditLog], int]:
         """
-        Query audit logs with filters.
-        
+        Query audit logs with filters and return total count for pagination.
+
         Args:
             db: Database session
             action_type: Filter by action type
@@ -194,14 +249,13 @@ class AuditService:
             end_date: End date for filtering
             limit: Maximum number of results
             offset: Offset for pagination
-            
+
         Returns:
-            List of AuditLog records
+            Tuple of (List of AuditLog records, total count)
         """
-        query = select(AuditLog)
-        
+        # Build conditions
         conditions = []
-        
+
         if action_type:
             conditions.append(AuditLog.action_type == action_type)
         if user_type:
@@ -220,12 +274,25 @@ class AuditService:
             conditions.append(AuditLog.created_at >= start_date)
         if end_date:
             conditions.append(AuditLog.created_at <= end_date)
-        
+
+        # Build count query (without limit/offset)
+        count_query = select(func.count()).select_from(AuditLog)
         if conditions:
-            query = query.where(and_(*conditions))
-        
-        query = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
-        
-        result = await db.execute(query)
-        return result.scalars().all()
+            count_query = count_query.where(and_(*conditions))
+
+        # Execute count query
+        count_result = await db.execute(count_query)
+        total = count_result.scalar() or 0
+
+        # Build data query (with limit/offset)
+        data_query = select(AuditLog)
+        if conditions:
+            data_query = data_query.where(and_(*conditions))
+        data_query = data_query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
+
+        # Execute data query
+        result = await db.execute(data_query)
+        logs = result.scalars().all()
+
+        return logs, total
 

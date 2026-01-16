@@ -1,0 +1,212 @@
+{
+	"info": {
+		"_postman_id": "d44ac309-a47a-45e4-98db-9722033bba2d",
+		"name": "HSM API - Integracion",
+		"description": "Complete Postman collection for the HSM API - A scalable FastAPI microservice for sending HSM (Highly Structured Messages) to multiple providers, starting with Botmaker.\n\n## Setup Instructions\n\n1. **Set Environment Variables**:\n   - `base_url`: Your API base URL (default: `http://localhost:8000`)\n   - `access_token`: Will be automatically set after login\n   - `client_id`: Your client ID for authentication\n   - `client_secret`: Your client secret for authentication\n\n2. **Authentication Flow**:\n   - First, use the `Login` endpoint to get an access token\n   - The token will be automatically saved to the `access_token` variable\n   - All authenticated endpoints will use this token automatically\n\n3. **Provider Configuration**:\n   - Most HSM endpoints accept a `provider` query parameter (default: `botmaker`)\n   - Supported providers: `botmaker`, `whatsapp_business`\n\n## Endpoints Overview\n\n### Authentication\n- `POST /api/v1/auth/login` - Client login (no auth required)\n- `GET /api/v1/auth/clients` - List all clients (requires auth)\n\n### HSM Operations\n- `GET /api/v1/hsm/` - Get HSM API information\n- `POST /api/v1/hsm/send-hsm` - Send HSM message with template validation\n- `GET /api/v1/hsm/validate-template/{template_name}` - Validate template exists\n- `GET /api/v1/hsm/template/{template_name}` - Get HSM template information\n- `GET /api/v1/hsm/cache/stats` - Get cache statistics\n- `POST /api/v1/hsm/cache/clear` - Clear template cache\n\n### System\n- `GET /` - Root endpoint with API information\n- `GET /health` - Health check endpoint",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "42894656"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.access_token) {",
+									"        pm.environment.set('access_token', response.access_token);",
+									"        pm.collectionVariables.set('access_token', response.access_token);",
+									"        console.log('Access token saved to environment');",
+									"    }",
+									"}",
+									"",
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has access_token', function () {",
+									"    const response = pm.response.json();",
+									"    pm.expect(response).to.have.property('access_token');",
+									"    pm.expect(response).to.have.property('token_type');",
+									"    pm.expect(response.token_type).to.eql('bearer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": \"{{client_id}}\",\n    \"client_secret\": \"{{client_secret}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Client login endpoint - no authentication required.\n\nThis endpoint authenticates a client using client_id and client_secret, and returns a JWT access token that can be used for subsequent authenticated requests.\n\nThe access token is automatically saved to the `access_token` environment variable after a successful login."
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints for client authentication and management"
+		},
+		{
+			"name": "HSM Operations",
+			"item": [
+				{
+					"name": "Send HSM",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200 or 404 or 503', function () {",
+									"    pm.expect([200, 404, 503]).to.include(pm.response.code);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test('Response has HSM send result', function () {",
+									"        const response = pm.response.json();",
+									"        pm.expect(response).to.have.property('success');",
+									"        pm.expect(response).to.have.property('template_name');",
+									"        pm.expect(response).to.have.property('provider');",
+									"        pm.expect(response).to.have.property('status');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"template_name\": \"welcome_message\",\n    \"phone_number\": \"15551234567\",\n    \"origin\": \"15559876543\",\n    \"language\": \"es\",\n    \"parameters\": {\n        \"name\": \"John Doe\",\n        \"company\": \"Acme Corporation\"\n    },\n    \"provider\": \"botmaker\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/hsm/send-hsm?provider=botmaker",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"hsm",
+								"send-hsm"
+							],
+							"query": [
+								{
+									"key": "provider",
+									"value": "botmaker",
+									"description": "Provider name (botmaker, whatsapp_business)"
+								}
+							]
+						},
+						"description": "Send HSM message with template validation.\n\nThis endpoint sends a Highly Structured Message (HSM) to a recipient using a template. The template is validated before sending.\n\n**Request Body Parameters:**\n\n- `template_name` (required): HSM template name (alphanumeric, underscore, hyphen only, max 100 chars)\n    \n- `phone_number` (required): Recipient phone number with country code (10-15 digits)\n    \n- `origin` (required): Sender phone number with country code (10-15 digits)\n    \n- `language` (optional): Template language code (default: \"es\", 2 lowercase letters)\n    \n- `parameters` (optional): Template parameters as key-value pairs\n    \n- `provider` (optional): HSM provider (default: \"botmaker\")\n    \n\n**Query Parameters:**\n\n- `provider`: Provider name (botmaker, whatsapp_business)\n    \n\n**Response:**\n\n- Success (200): Returns message status, message_id, and template information\n    \n- Template Not Found (404): Template doesn't exist in provider\n    \n- Provider Error (503): Provider unavailable or error\n    \n\n**Note:** In non-production environments, messages may be redirected to a default receiver if `HSM_RECEIVER_DEFAULT` is configured."
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints for HSM (Highly Structured Messages) operations including sending messages, validating templates, and managing cache"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-set base_url if not set",
+					"if (!pm.environment.get('base_url')) {",
+					"    pm.environment.set('base_url', 'http://localhost:8000');",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test script - runs after each request",
+					"pm.test('Response time is less than 5000ms', function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+					"});"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "client_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "client_secret",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

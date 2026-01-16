@@ -2,7 +2,6 @@
 Tests for API endpoints including health checks and error responses.
 """
 import pytest
-from fastapi.testclient import TestClient
 
 
 class TestHealthEndpoints:

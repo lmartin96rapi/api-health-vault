@@ -3,7 +3,8 @@ CSRF protection middleware using double-submit cookie pattern.
 """
 import secrets
 import logging
-from typing import Set
+from typing import Set, Optional
+from urllib.parse import urlparse
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -58,8 +59,18 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # Ensure CSRF cookie is set for subsequent requests
             return self._ensure_csrf_cookie(request, response)
 
-        # Skip exempt paths
+        # Skip exempt paths (but still validate origin for state-changing methods)
         if self._is_exempt_path(request.url.path):
+            # Still validate origin for exempt paths to prevent cross-origin attacks
+            origin_error = self._validate_origin(request)
+            if origin_error:
+                logger.warning(
+                    f"CSRF origin validation failed for exempt path: {origin_error} for {request.method} {request.url.path}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Invalid request origin"
+                )
             return await call_next(request)
 
         # Validate CSRF token
@@ -106,6 +117,37 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             return True
 
         return False
+
+    def _validate_origin(self, request: Request) -> Optional[str]:
+        """
+        Validate Origin/Referer header against allowed origins.
+
+        Returns:
+            None if valid, error message if invalid
+        """
+        origin = request.headers.get("Origin")
+        referer = request.headers.get("Referer")
+
+        # If no Origin or Referer, allow (same-origin requests may not include these)
+        if not origin and not referer:
+            return None
+
+        # Get allowed origins from settings
+        allowed_origins = settings.BACKEND_CORS_ORIGINS
+
+        # Check Origin header
+        if origin:
+            if origin not in allowed_origins:
+                return f"Origin '{origin}' not allowed"
+
+        # Check Referer header if Origin is not present
+        if not origin and referer:
+            parsed = urlparse(referer)
+            referer_origin = f"{parsed.scheme}://{parsed.netloc}"
+            if referer_origin not in allowed_origins:
+                return f"Referer origin '{referer_origin}' not allowed"
+
+        return None
 
     def _ensure_csrf_cookie(self, request: Request, response: Response) -> Response:
         """Ensure CSRF cookie is set on response."""

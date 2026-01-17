@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
@@ -5,6 +6,8 @@ from sqlalchemy.orm import selectinload
 from app.models.acl import Role, Permission, UserRole, ResourcePermission
 from app.models.operator import Operator
 from app.core.exceptions import PermissionDeniedException
+
+logger = logging.getLogger(__name__)
 
 
 async def check_endpoint_permission(
@@ -29,8 +32,11 @@ async def check_endpoint_permission(
     )
     operator = result.scalar_one_or_none()
     if operator and operator.is_superadmin:
+        logger.warning(
+            f"SUPERADMIN_BYPASS | user_id={user_id} | permission={permission_name} | email={operator.google_email}"
+        )
         return True  # Superadmin bypasses all ACL checks
-    
+
     # Get user's roles
     result = await db.execute(
         select(UserRole)
@@ -78,8 +84,12 @@ async def check_resource_permission(
     )
     operator = result.scalar_one_or_none()
     if operator and operator.is_superadmin:
+        logger.warning(
+            f"SUPERADMIN_BYPASS | user_id={user_id} | permission={permission_name} | "
+            f"resource={resource_type}:{resource_id} | email={operator.google_email}"
+        )
         return True  # Superadmin bypasses all ACL checks
-    
+
     # First check endpoint permission
     has_endpoint_permission = await check_endpoint_permission(db, user_id, permission_name)
     if has_endpoint_permission:

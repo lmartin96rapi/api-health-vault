@@ -175,7 +175,7 @@ class FormService:
                 "Form created",
                 RequestID=request_id,
                 FormID=form.id,
-                FormToken=form.form_token,
+                FormToken=f"{form.form_token[:8]}..." if form.form_token else None,
                 ExpiresAt=form.expires_at.isoformat(),
                 IdempotencyKey=idempotency_key,
                 Data=masked_data
@@ -367,9 +367,8 @@ class FormService:
                 document_type=DocumentType.INVOICE
             )
             
-            # Generate comment with access link for operators
-            access_link_url = f"{settings.API_BASE_URL.rstrip('/')}/api/v1/document-access/{access_token}"
-            comment = f"Formulario enviado. Acceso: {access_link_url}"
+            # Generate comment with reference (not full URL for security)
+            comment = f"Formulario enviado. Referencia: orden {form.order_id}" if form.order_id else f"Formulario enviado. Referencia: submission {form_submission.id}"
             
             # Prepare backend API payload (matching backend API format)
             # Safely convert client_id and policy_id to int (handle string values)

@@ -4,6 +4,7 @@ import aiofiles
 import asyncio
 import uuid
 import re
+import magic
 from datetime import datetime
 from typing import List, Optional, Tuple
 from pathlib import Path
@@ -116,14 +117,44 @@ class DocumentService:
     def _validate_file_type(self, mime_type: str) -> bool:
         """
         Validate if file type is allowed.
-        
+
         Args:
             mime_type: MIME type of the file
-            
+
         Returns:
             True if allowed, False otherwise
         """
         return mime_type in self.allowed_types
+
+    def _validate_file_type_with_magic(self, content: bytes, claimed_mime: str) -> bool:
+        """
+        Validate file type using magic bytes (file signature).
+
+        Args:
+            content: File content bytes
+            claimed_mime: The MIME type claimed by the upload
+
+        Returns:
+            True if file signature matches an allowed type, False otherwise
+        """
+        if claimed_mime not in self.allowed_types:
+            return False
+
+        try:
+            detected = magic.from_buffer(content, mime=True)
+            # Normalize common MIME type variations
+            normalized = detected.replace("image/jpg", "image/jpeg")
+            return normalized in self.allowed_types
+        except Exception as e:
+            logger.warning(
+                sanitize_log_message(
+                    "Magic byte validation failed, falling back to claimed MIME type",
+                    Error=str(e),
+                    ClaimedMime=claimed_mime
+                )
+            )
+            # Fall back to claimed MIME type if magic detection fails
+            return claimed_mime in self.allowed_types
     
     async def upload_document(
         self,
@@ -147,13 +178,7 @@ class DocumentService:
         Raises:
             DocumentUploadException if upload fails
         """
-        # Validate file type
-        if not self._validate_file_type(file.content_type):
-            raise DocumentUploadException(
-                detail=f"File type {file.content_type} is not allowed. Allowed types: {self.allowed_types}"
-            )
-
-        # Read file content first to validate size before writing
+        # Read file content first to validate before writing
         content = await file.read()
         file_size = len(content)
 
@@ -166,6 +191,12 @@ class DocumentService:
         if file_size == 0:
             raise DocumentUploadException(
                 detail="File is empty"
+            )
+
+        # Validate file type using magic bytes (content-based validation)
+        if not self._validate_file_type_with_magic(content, file.content_type):
+            raise DocumentUploadException(
+                detail=f"File type validation failed. The file content does not match an allowed type. Allowed types: {self.allowed_types}"
             )
 
         # Sanitize filename for secure storage

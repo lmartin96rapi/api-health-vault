@@ -1,5 +1,4 @@
 import logging
-import traceback
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -46,8 +45,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "Accept", "Origin"],
 )
 
 # Security middleware (request size limit + security headers)
@@ -179,8 +178,7 @@ async def external_api_handler(request: Request, exc: ExternalAPIException):
             Method=request.method,
             IP=request.client.host if request.client else None,
             StatusCode=exc.status_code,
-            Detail=exc.detail,
-            Traceback=traceback.format_exc()
+            Detail=exc.detail
         ),
         exc_info=True
     )
@@ -234,8 +232,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             Method=request.method,
             IP=request.client.host if request.client else None,
             ExceptionType=type(exc).__name__,
-            ExceptionMessage=str(exc),
-            Traceback=traceback.format_exc()
+            ExceptionMessage=str(exc)
         )
     )
     return JSONResponse(

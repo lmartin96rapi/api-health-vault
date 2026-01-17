@@ -1,3 +1,4 @@
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,20 @@ from app.core.acl import require_resource_permission
 from app.core.exceptions import AccessLinkInvalidException
 
 router = APIRouter()
+
+# Safe MIME types whitelist for file downloads
+SAFE_MIME_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+
+
+def get_safe_mime_type(filename: str) -> str:
+    """Get safe MIME type based on file extension, defaulting to octet-stream."""
+    ext = Path(filename).suffix.lower()
+    return SAFE_MIME_TYPES.get(ext, "application/octet-stream")
 
 
 @router.get("/{access_token}", response_model=DocumentAccessResponse)
@@ -145,7 +160,7 @@ async def download_invoice(
     return FileResponse(
         path=str(file_path),
         filename=document.file_name,
-        media_type=document.mime_type
+        media_type=get_safe_mime_type(document.file_name)
     )
 
 
@@ -216,6 +231,6 @@ async def view_document(
     return FileResponse(
         path=str(file_path),
         filename=document.file_name,
-        media_type=document.mime_type
+        media_type=get_safe_mime_type(document.file_name)
     )
 

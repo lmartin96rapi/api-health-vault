@@ -142,20 +142,27 @@ class BackendAPIClient:
 
                 # If 4xx error, don't retry (except 429)
                 if 400 <= response.status_code < 500 and response.status_code != 429:
-                    error_msg = f"Backend API error: {response.status_code} - {response.text[:500]}"
+                    error_msg = f"Backend API error: {response.status_code}"
                     logger.error(
                         sanitize_log_message(
                             error_msg,
                             Endpoint=endpoint,
                             StatusCode=response.status_code,
-                            Attempt=attempt + 1,
-                            ResponseText=response.text[:500]
+                            Attempt=attempt + 1
+                        )
+                    )
+                    logger.debug(
+                        sanitize_log_message(
+                            "Backend API error response details",
+                            Endpoint=endpoint,
+                            StatusCode=response.status_code,
+                            ResponseText=response.text[:500] if response.text else None
                         )
                     )
                     raise ExternalAPIException(detail=error_msg)
 
                 # For 5xx or 429, retry
-                error_msg = f"Backend API error: {response.status_code} - {response.text[:500]}"
+                error_msg = f"Backend API error: {response.status_code}"
                 logger.warning(
                     sanitize_log_message(
                         f"Retrying Backend API request",
